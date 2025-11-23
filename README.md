@@ -77,22 +77,6 @@ hexxa/quickshare
 - `/quickshare/root` is where the Quickshare stores files and directories.
 - Please refer to [this doc](./docs/doc.md) if you want to manage files and folders from OS.
 
-### Run from source code
-
-Before start, please confirm that Go/Golang (>=1.17), Node.js and Yarn are installed on your machine.
-
-```
-# clone this repo
-git clone git@github.com:ihexxa/quickshare.git
-
-# go to repo's folder
-cd quickshare
-
-DEFAULTADMIN=qs DEFAULTADMINPWD=1234 yarn start
-```
-
-OK! Open `http://127.0.0.1:8686` in browser, and log in with user name `qs` and password `1234`.
-
 ### Run executable file
 
 - **Downloading**: Download last distribution(s) in [Release Page](https://github.com/ihexxa/quickshare/releases).
@@ -102,3 +86,4 @@ OK! Open `http://127.0.0.1:8686` in browser, and log in with user name `qs` and 
 ### FAQ
 
 Coming soon.
+
