@@ -27,7 +27,7 @@ func (st *BaseStore) setUser(ctx context.Context, tx *sql.Tx, user *db.User) err
 	_, err = tx.ExecContext(
 		ctx,
 		`update t_user
-		set name=?, pwd=?, role=?, used_space=?, quota=?, preference=?
+		set name=?, pwd=?, role=?, used_space=?, quota=?, preference=?, totp_secret=?, totp_enabled=?
 		where id=?`,
 		user.Name,
 		user.Pwd,
@@ -35,6 +35,8 @@ func (st *BaseStore) setUser(ctx context.Context, tx *sql.Tx, user *db.User) err
 		user.UsedSpace,
 		quotaStr,
 		preferencesStr,
+		user.TOTPSecret,
+		user.TOTPEnabled,
 		user.ID,
 	)
 	return err
@@ -45,7 +47,7 @@ func (st *BaseStore) getUser(ctx context.Context, tx *sql.Tx, id uint64) (*db.Us
 	var quotaStr, preferenceStr string
 	err := tx.QueryRowContext(
 		ctx,
-		`select id, name, pwd, role, used_space, quota, preference
+		`select id, name, pwd, role, used_space, quota, preference, totp_secret, totp_enabled
 		from t_user
 		where id=?`,
 		id,
@@ -57,6 +59,8 @@ func (st *BaseStore) getUser(ctx context.Context, tx *sql.Tx, id uint64) (*db.Us
 		&user.UsedSpace,
 		&quotaStr,
 		&preferenceStr,
+		&user.TOTPSecret,
+		&user.TOTPEnabled,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -87,7 +91,7 @@ func (st *BaseStore) addUser(ctx context.Context, tx *sql.Tx, user *db.User) err
 	}
 	_, err = tx.ExecContext(
 		ctx,
-		`insert into t_user (id, name, pwd, role, used_space, quota, preference) values (?, ?, ?, ?, ?, ?, ?)`,
+		`insert into t_user (id, name, pwd, role, used_space, quota, preference, totp_secret, totp_enabled) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		user.ID,
 		user.Name,
 		user.Pwd,
@@ -95,6 +99,8 @@ func (st *BaseStore) addUser(ctx context.Context, tx *sql.Tx, user *db.User) err
 		user.UsedSpace,
 		quotaStr,
 		preferenceStr,
+		user.TOTPSecret,
+		user.TOTPEnabled,
 	)
 	return err
 }
@@ -161,7 +167,7 @@ func (st *BaseStore) GetUserByName(ctx context.Context, name string) (*db.User, 
 	var quotaStr, preferenceStr string
 	err = tx.QueryRowContext(
 		ctx,
-		`select id, name, pwd, role, used_space, quota, preference
+		`select id, name, pwd, role, used_space, quota, preference, totp_secret, totp_enabled
 		from t_user
 		where name=?`,
 		name,
@@ -173,6 +179,8 @@ func (st *BaseStore) GetUserByName(ctx context.Context, name string) (*db.User, 
 		&user.UsedSpace,
 		&quotaStr,
 		&preferenceStr,
+		&user.TOTPSecret,
+		&user.TOTPEnabled,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -235,9 +243,9 @@ func (st *BaseStore) SetInfo(ctx context.Context, id uint64, user *db.User) erro
 	_, err = tx.ExecContext(
 		ctx,
 		`update t_user
-		set role=?, quota=?
+		set role=?, quota=?, totp_secret=?, totp_enabled=?
 		where id=?`,
-		user.Role, quotaStr,
+		user.Role, quotaStr, user.TOTPSecret, user.TOTPEnabled,
 		id,
 	)
 	if err != nil {
@@ -350,7 +358,7 @@ func (st *BaseStore) ListUsers(ctx context.Context) ([]*db.User, error) {
 	// TODO: support pagination
 	rows, err := tx.QueryContext(
 		ctx,
-		`select id, name, role, used_space, quota, preference
+		`select id, name, role, used_space, quota, preference, totp_secret, totp_enabled
 		from t_user`,
 	)
 	if err != nil {
@@ -372,6 +380,8 @@ func (st *BaseStore) ListUsers(ctx context.Context) ([]*db.User, error) {
 			&user.UsedSpace,
 			&quotaStr,
 			&preferenceStr,
+			&user.TOTPSecret,
+			&user.TOTPEnabled,
 		)
 		err = json.Unmarshal([]byte(quotaStr), &user.Quota)
 		if err != nil {

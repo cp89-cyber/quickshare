@@ -37,6 +37,7 @@ export interface State {
   pwd: string;
   captchaInput: string;
   captchaLoaded: boolean;
+  totpCode: string;
 }
 
 export class AuthPane extends React.Component<Props, State, {}> {
@@ -51,6 +52,7 @@ export class AuthPane extends React.Component<Props, State, {}> {
       pwd: "",
       captchaInput: "",
       captchaLoaded: false,
+      totpCode: "",
     };
   }
 
@@ -83,6 +85,10 @@ export class AuthPane extends React.Component<Props, State, {}> {
     this.setState({ captchaInput: ev.target.value });
   };
 
+  changeTOTP = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    this.setState({ totpCode: ev.target.value });
+  };
+
   login = async () => {
     updater().setControlOption(loadingCtrl, ctrlOn);
     this.props.update(updater().updateUI);
@@ -92,7 +98,8 @@ export class AuthPane extends React.Component<Props, State, {}> {
         this.state.user,
         this.state.pwd,
         this.props.login.captchaID,
-        this.state.captchaInput
+        this.state.captchaInput,
+        this.state.totpCode
       );
       if (loginStatus !== "") {
         Env().alertMsg(
@@ -111,7 +118,7 @@ export class AuthPane extends React.Component<Props, State, {}> {
 
       this.setState({ user: "", pwd: "" });
     } finally {
-      this.setState({ pwd: "", captchaInput: "" });
+      this.setState({ pwd: "", captchaInput: "", totpCode: "" });
       updater().setControlOption(loadingCtrl, ctrlOff);
       await this.refreshCaptcha();
       this.props.update(updater().updateAll);
@@ -184,6 +191,14 @@ export class AuthPane extends React.Component<Props, State, {}> {
               onChange={this.changePwd}
               value={this.state.pwd}
               placeholder={this.props.msg.pkg.get("login.pwd")}
+            />
+            
+            <input
+              name="totp"
+              type="text"
+              onChange={this.changeTOTP}
+              value={this.state.totpCode}
+              placeholder="2FA Code (if enabled)"
             />
 
             {row3}

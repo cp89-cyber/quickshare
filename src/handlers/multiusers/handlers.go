@@ -1,8 +1,11 @@
 package multiusers
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"image/png"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -11,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ihexxa/gocfg"
 	qradix "github.com/ihexxa/q-radix/v3"
+	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ihexxa/quickshare/src/db"
@@ -148,6 +152,9 @@ func NewMultiUsersSvc(cfg gocfg.ICfg, deps *depidx.Deps) (*MultiUsersSvc, error)
 			fmt.Sprintf("%s:PATCH", db.UserRole):  true,
 			fmt.Sprintf("%s:DELETE", db.UserRole): true,
 		},
+		"/v2/my/totp/": {
+			fmt.Sprintf("%s:POST", db.UserRole): true,
+		},
 		"/v2/public/": {
 			fmt.Sprintf("%s:GET", db.UserRole):     true,
 			fmt.Sprintf("%s:POST", db.UserRole):    true,
@@ -179,6 +186,7 @@ type LoginReq struct {
 	Pwd          string `json:"pwd"`
 	CaptchaID    string `json:"captchaId"`
 	CaptchaInput string `json:"captchaInput"`
+	TOTPCode     string `json:"totpCode"`
 }
 
 func (h *MultiUsersSvc) Login(c *gin.Context) {
@@ -211,6 +219,17 @@ func (h *MultiUsersSvc) Login(c *gin.Context) {
 	if err != nil {
 		c.JSON(q.ErrResp(c, 403, err))
 		return
+	}
+
+	if user.TOTPEnabled {
+		if req.TOTPCode == "" {
+			c.JSON(q.ErrResp(c, 403, errors.New("TOTP code required")))
+			return
+		}
+		if !totp.Validate(req.TOTPCode, user.TOTPSecret) {
+			c.JSON(q.ErrResp(c, 403, errors.New("invalid TOTP code")))
+			return
+		}
 	}
 
 	ttl := h.cfg.GrabInt("Users.CookieTTL")
@@ -596,6 +615,7 @@ type SelfResp struct {
 	Quota       *db.Quota       `json:"quota"`
 	UsedSpace   int64           `json:"usedSpace,string"`
 	Preferences *db.Preferences `json:"preferences"`
+	TOTPEnabled bool            `json:"totpEnabled"`
 }
 
 func (h *MultiUsersSvc) Self(c *gin.Context) {
@@ -623,6 +643,7 @@ func (h *MultiUsersSvc) Self(c *gin.Context) {
 		Quota:       user.Quota,
 		UsedSpace:   user.UsedSpace,
 		Preferences: user.Preferences,
+		TOTPEnabled: user.TOTPEnabled,
 	})
 }
 
@@ -680,5 +701,123 @@ func (h *MultiUsersSvc) SetPreferences(c *gin.Context) {
 		c.JSON(q.ErrResp(c, 500, err))
 		return
 	}
+	c.JSON(q.Resp(200))
+}
+
+type GenerateTOTPResp struct {
+	Secret string `json:"secret"`
+	QRCode string `json:"qrcode"` // base64 encoded png
+}
+
+func (h *MultiUsersSvc) GenerateTOTP(c *gin.Context) {
+	claims, err := h.getUserInfo(c)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 403, err))
+		return
+	}
+
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Quickshare",
+		AccountName: claims[q.UserParam],
+	})
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
+	var buf bytes.Buffer
+	img, err := key.Image(200, 200)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+	png.Encode(&buf, img)
+
+	c.JSON(200, &GenerateTOTPResp{
+		Secret: key.Secret(),
+		QRCode: base64.StdEncoding.EncodeToString(buf.Bytes()),
+	})
+}
+
+type EnableTOTPReq struct {
+	Secret string `json:"secret"`
+	Code   string `json:"code"`
+}
+
+func (h *MultiUsersSvc) EnableTOTP(c *gin.Context) {
+	req := &EnableTOTPReq{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(q.ErrResp(c, 400, err))
+		return
+	}
+
+	if !totp.Validate(req.Code, req.Secret) {
+		c.JSON(q.ErrResp(c, 400, errors.New("invalid code")))
+		return
+	}
+
+	uidStr := c.MustGet(q.UserIDParam).(string)
+	uid, err := strconv.ParseUint(uidStr, 10, 64)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
+	user, err := h.deps.Users().GetUser(c, uid)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
+	user.TOTPSecret = req.Secret
+	user.TOTPEnabled = true
+
+	// We reuse SetInfo to update user, but SetInfo currently only updates Role and Quota.
+	// We need to update TOTP fields.
+	// Since we updated SetInfo in the store to update all fields passed in user object (Wait, did we?)
+	// Let's check SetInfo in store.
+	// In base/users.go:
+	// func (st *BaseStore) SetInfo(ctx context.Context, id uint64, user *db.User) error {
+	// ...
+	// `update t_user set role=?, quota=?, totp_secret=?, totp_enabled=? where id=?`
+	// ...
+	// }
+	// So SetInfo updates Role, Quota, TOTPSecret, TOTPEnabled.
+	// But we need to make sure we don't overwrite Role and Quota with empty values if we just want to update TOTP.
+	// The user object we got from GetUser has all fields populated.
+	// So passing it back to SetInfo should be fine.
+
+	err = h.deps.Users().SetInfo(c, uid, user)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
+	c.JSON(q.Resp(200))
+}
+
+func (h *MultiUsersSvc) DisableTOTP(c *gin.Context) {
+	uidStr := c.MustGet(q.UserIDParam).(string)
+	uid, err := strconv.ParseUint(uidStr, 10, 64)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
+	user, err := h.deps.Users().GetUser(c, uid)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
+	user.TOTPSecret = ""
+	user.TOTPEnabled = false
+
+	err = h.deps.Users().SetInfo(c, uid, user)
+	if err != nil {
+		c.JSON(q.ErrResp(c, 500, err))
+		return
+	}
+
 	c.JSON(q.Resp(200))
 }

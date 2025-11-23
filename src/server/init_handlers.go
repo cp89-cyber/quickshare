@@ -151,6 +151,9 @@ func (it *Initer) InitHandlers(deps *depidx.Deps) (*gin.Engine, error) {
 	userAPI.POST("/errors", settingsSvc.ReportErrors)
 	userAPI.GET("/isauthed", userHdrs.IsAuthed)
 	userAPI.POST("/logout", userHdrs.Logout)
+	userAPI.POST("/totp/generate", userHdrs.GenerateTOTP)
+	userAPI.POST("/totp/enable", userHdrs.EnableTOTP)
+	userAPI.POST("/totp/disable", userHdrs.DisableTOTP)
 
 	// public
 	publicAPI := v2.Group("/public")

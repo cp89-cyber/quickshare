@@ -23,6 +23,10 @@ export interface State {
   oldPwd: string;
   newPwd1: string;
   newPwd2: string;
+  totpSecret: string;
+  totpQRCode: string;
+  totpCode: string;
+  showTOTP: boolean;
 }
 
 export class PaneSettings extends React.Component<Props, State, {}> {
@@ -34,6 +38,9 @@ export class PaneSettings extends React.Component<Props, State, {}> {
   };
   changeNewPwd2 = (ev: React.ChangeEvent<HTMLInputElement>) => {
     this.setState({ newPwd2: ev.target.value });
+  };
+  changeTOTPCode = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    this.setState({ totpCode: ev.target.value });
   };
   changeBgUrl = (ev: React.ChangeEvent<HTMLInputElement>) => {
     updater().setPreferences({
@@ -91,6 +98,10 @@ export class PaneSettings extends React.Component<Props, State, {}> {
       oldPwd: "",
       newPwd1: "",
       newPwd2: "",
+      totpSecret: "",
+      totpQRCode: "",
+      totpCode: "",
+      showTOTP: false,
     };
   }
 
@@ -176,6 +187,59 @@ export class PaneSettings extends React.Component<Props, State, {}> {
       Env().alertMsg(this.props.msg.pkg.get("update.ok"));
     } finally {
       this.props.update(updater().updateUI);
+    }
+  };
+
+  generateTOTP = async () => {
+    this.setLoading(true);
+    try {
+      const resp = await updater().generateTOTP();
+      if (resp.status !== 200) {
+         Env().alertMsg(this.props.msg.pkg.get("op.fail"));
+         return;
+      }
+      const data = await resp.json();
+      this.setState({
+        totpSecret: data.secret,
+        totpQRCode: data.qrcode,
+        showTOTP: true,
+      });
+    } finally {
+      this.setLoading(false);
+    }
+  };
+
+  enableTOTP = async () => {
+    this.setLoading(true);
+    try {
+      const status = await updater().enableTOTP(this.state.totpSecret, this.state.totpCode);
+      if (status !== "") {
+        Env().alertMsg(getErrMsg(this.props.msg.pkg, "op.fail", status));
+        return;
+      }
+      Env().alertMsg(this.props.msg.pkg.get("update.ok"));
+      this.setState({ showTOTP: false, totpCode: "", totpSecret: "", totpQRCode: "" });
+      this.props.update(updater().updateLogin); // refresh user info
+    } finally {
+      this.setLoading(false);
+    }
+  };
+
+  disableTOTP = async () => {
+    if (!Env().confirmMsg(this.props.msg.pkg.get("op.confirm"))) {
+      return;
+    }
+    this.setLoading(true);
+    try {
+      const status = await updater().disableTOTP();
+      if (status !== "") {
+        Env().alertMsg(getErrMsg(this.props.msg.pkg, "op.fail", status));
+        return;
+      }
+      Env().alertMsg(this.props.msg.pkg.get("update.ok"));
+      this.props.update(updater().updateLogin); // refresh user info
+    } finally {
+      this.setLoading(false);
     }
   };
 
@@ -325,6 +389,48 @@ export class PaneSettings extends React.Component<Props, State, {}> {
         </Container>
       ) : null;
 
+    const totpPane = (
+      <Container>
+        <Flexbox
+            children={List([
+              <h5 className="title-m">
+                Two-Factor Authentication
+              </h5>,
+            ])}
+            childrenStyles={List([{}, { justifyContent: "flex-end" }])}
+          />
+          <div className="hr"></div>
+          
+          {this.props.login.totpEnabled ? (
+             <div>
+                <p className="margin-b-m">2FA is currently enabled.</p>
+                <button onClick={this.disableTOTP}>Disable 2FA</button>
+             </div>
+          ) : (
+             <div>
+                {!this.state.showTOTP ? (
+                  <button onClick={this.generateTOTP}>Enable 2FA</button>
+                ) : (
+                  <div>
+                    <p>Scan this QR code with your authenticator app:</p>
+                    <img src={`data:image/png;base64,${this.state.totpQRCode}`} alt="TOTP QR Code" className="margin-b-m" />
+                    <p>Enter the code from your app:</p>
+                    <input 
+                      type="text" 
+                      value={this.state.totpCode} 
+                      onChange={this.changeTOTPCode} 
+                      placeholder="123456"
+                      className="margin-r-m"
+                    />
+                    <button onClick={this.enableTOTP}>Verify & Enable</button>
+                    <button onClick={() => this.setState({showTOTP: false})} className="margin-l-m">Cancel</button>
+                  </div>
+                )}
+             </div>
+          )}
+      </Container>
+    );
+
     return (
       <div id="pane-settings">
         <Container>
@@ -424,6 +530,8 @@ export class PaneSettings extends React.Component<Props, State, {}> {
             />
           </span>
         </Container>
+
+        {totpPane}
 
         <Container>
           <Flexbox

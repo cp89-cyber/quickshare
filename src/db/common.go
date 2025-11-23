@@ -172,6 +172,8 @@ type User struct {
 	UsedSpace   int64        `json:"usedSpace,string" yaml:"usedSpace,string"`
 	Quota       *Quota       `json:"quota" yaml:"quota"`
 	Preferences *Preferences `json:"preferences" yaml:"preferences"`
+	TOTPSecret  string       `json:"totpSecret" yaml:"totpSecret"`
+	TOTPEnabled bool         `json:"totpEnabled" yaml:"totpEnabled"`
 }
 
 type UploadInfo struct {

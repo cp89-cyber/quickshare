@@ -72,11 +72,34 @@ func (st *BaseStore) InitUserTable(ctx context.Context, tx *sql.Tx, rootName, ro
 			used_space bigint not null,
 			quota varchar not null,
 			preference varchar not null,
+			totp_secret varchar not null default '',
+			totp_enabled boolean not null default false,
 			primary key(id)
 		)`,
 	)
 	if err != nil {
 		return err
+	}
+
+	// Migration: check if totp_secret column exists
+	// This is a simple way to check and add columns for SQLite
+	// For production systems, a proper migration tool is recommended
+	_, err = tx.ExecContext(ctx, `SELECT totp_secret FROM t_user LIMIT 1`)
+	if err != nil {
+		// Column likely doesn't exist, try to add it
+		_, err = tx.ExecContext(ctx, `ALTER TABLE t_user ADD COLUMN totp_secret varchar not null default ''`)
+		if err != nil {
+			// Ignore error if it's just that the column already exists (race condition or other DB specific error mapping)
+			// But for now, let's return error to be safe, or log it.
+			// simpler: just try to add and ignore specific error?
+			// For this environment, let's assume if select failed, we need to add.
+			// If alter fails, it might be serious.
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `ALTER TABLE t_user ADD COLUMN totp_enabled boolean not null default false`)
+		if err != nil {
+			return err
+		}
 	}
 
 	_, err = tx.ExecContext(

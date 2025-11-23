@@ -153,4 +153,29 @@ export class UsersClient extends BaseClient {
       },
     });
   };
+
+  generateTOTP = (): Promise<Response> => {
+    return this.do({
+      method: "post",
+      url: `${this.url}/v2/my/totp/generate`,
+    });
+  };
+
+  enableTOTP = (secret: string, code: string): Promise<Response> => {
+    return this.do({
+      method: "post",
+      url: `${this.url}/v2/my/totp/enable`,
+      data: {
+        secret,
+        code,
+      },
+    });
+  };
+
+  disableTOTP = (): Promise<Response> => {
+    return this.do({
+      method: "post",
+      url: `${this.url}/v2/my/totp/disable`,
+    });
+  };
 }

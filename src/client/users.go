@@ -37,12 +37,17 @@ func (cl *UsersClient) Token() *http.Cookie {
 	return cl.token
 }
 
-func (cl *UsersClient) Login(user, pwd string) (*http.Response, string, []error) {
+func (cl *UsersClient) Login(user, pwd string, totpCode ...string) (*http.Response, string, []error) {
+	req := multiusers.LoginReq{
+		User: user,
+		Pwd:  pwd,
+	}
+	if len(totpCode) > 0 {
+		req.TOTPCode = totpCode[0]
+	}
+
 	resp, body, errs := cl.r.Post(cl.url("/v2/public/login")).
-		Send(multiusers.LoginReq{
-			User: user,
-			Pwd:  pwd,
-		}).
+		Send(req).
 		End()
 
 	if len(errs) == 0 && resp.StatusCode == 200 {
@@ -53,6 +58,40 @@ func (cl *UsersClient) Login(user, pwd string) (*http.Response, string, []error)
 		cl.token = &http.Cookie{}
 	}
 	return resp, body, errs
+}
+
+func (cl *UsersClient) GenerateTOTP() (*http.Response, *multiusers.GenerateTOTPResp, []error) {
+	resp, body, errs := cl.r.Post(cl.url("/v2/my/totp/generate")).
+		AddCookie(cl.token).
+		End()
+
+	if len(errs) > 0 {
+		return nil, nil, errs
+	}
+
+	totpResp := &multiusers.GenerateTOTPResp{}
+	err := json.Unmarshal([]byte(body), totpResp)
+	if err != nil {
+		errs = append(errs, err)
+		return nil, nil, errs
+	}
+	return resp, totpResp, errs
+}
+
+func (cl *UsersClient) EnableTOTP(secret, code string) (*http.Response, string, []error) {
+	return cl.r.Post(cl.url("/v2/my/totp/enable")).
+		AddCookie(cl.token).
+		Send(multiusers.EnableTOTPReq{
+			Secret: secret,
+			Code:   code,
+		}).
+		End()
+}
+
+func (cl *UsersClient) DisableTOTP() (*http.Response, string, []error) {
+	return cl.r.Post(cl.url("/v2/my/totp/disable")).
+		AddCookie(cl.token).
+		End()
 }
 
 func (cl *UsersClient) Logout() (*http.Response, string, []error) {
