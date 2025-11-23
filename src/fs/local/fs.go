@@ -452,5 +452,34 @@ func (fs *LocalFS) ListDir(path string) ([]os.FileInfo, error) {
 		return nil, err
 	}
 
-	return ioutil.ReadDir(fullpath)
+	list, err := ioutil.ReadDir(fullpath)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, info := range list {
+		if info.Mode()&os.ModeSymlink != 0 {
+			// it is a symlink
+			// check if it is a directory
+			linkPath := filepath.Join(fullpath, info.Name())
+			targetInfo, err := os.Stat(linkPath)
+			if err == nil && targetInfo.IsDir() {
+				list[i] = &SymlinkFileInfo{FileInfo: info}
+			}
+		}
+	}
+
+	return list, nil
+}
+
+type SymlinkFileInfo struct {
+	os.FileInfo
+}
+
+func (s *SymlinkFileInfo) IsDir() bool {
+	return true
+}
+
+func (s *SymlinkFileInfo) Mode() os.FileMode {
+	return os.ModeDir | s.FileInfo.Mode()
 }
